@@ -34,21 +34,31 @@ export const useGitStore = defineStore('git', {
 
   actions: {
     async selectRepo() {
-      const api = ensureDesktopApi()
-      const path = await api.selectRepo()
-      if (!path) return
+      this.loading = true
+      this.error = ''
 
-      const repoCheck = await api.git.isRepo(path)
-      if (!repoCheck.ok || !repoCheck.data) {
-        this.error = '选择的目录不是 Git 仓库。'
-        return
+      try {
+        const api = ensureDesktopApi()
+        const path = await api.selectRepo()
+        if (!path) return
+
+        const repoCheck = await api.git.isRepo(path)
+        if (!repoCheck.ok || !repoCheck.data) {
+          this.error = '选择的目录不是 Git 仓库。'
+          return
+        }
+
+        this.repoPath = path
+        this.selectedFile = null
+        this.diff = ''
+        this.addCommandLog('打开仓库', path, true)
+        await this.refreshAll()
+      } catch (error) {
+        this.error = error.message
+        this.addCommandLog('打开仓库', error.message, false)
+      } finally {
+        this.loading = false
       }
-
-      this.repoPath = path
-      this.selectedFile = null
-      this.diff = ''
-      this.addCommandLog('打开仓库', path, true)
-      await this.refreshAll()
     },
 
     async refreshAll() {
