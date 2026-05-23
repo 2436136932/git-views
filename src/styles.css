@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
   color: #25231f;
   background: #f5f2eb;
@@ -18,7 +18,9 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input,
+select {
   font: inherit;
 }
 
@@ -113,6 +115,7 @@ button:disabled {
 
 .repo-panel,
 .status-panel,
+.branch-panel,
 .command-log,
 .changes-panel,
 .commit-box,
@@ -125,6 +128,7 @@ button:disabled {
 
 .repo-panel,
 .status-panel,
+.branch-panel,
 .command-log {
   padding: 14px;
 }
@@ -139,6 +143,116 @@ button:disabled {
 .status-panel {
   display: grid;
   gap: 12px;
+}
+
+.branch-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.branch-panel .muted {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.occupied-list {
+  display: grid;
+  gap: 10px;
+}
+
+.occupied-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e0d7c8;
+  border-radius: 6px;
+  background: #fffdf8;
+}
+
+.occupied-item strong,
+.occupied-item small {
+  display: block;
+}
+
+.occupied-item small {
+  color: #766e61;
+  word-break: break-word;
+}
+
+.occupied-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.panel-title.compact {
+  margin-bottom: 0;
+}
+
+.branch-select,
+.branch-create input,
+.commit-box textarea {
+  width: 100%;
+  border: 1px solid #cfc8ba;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fffdf8;
+  color: #25231f;
+}
+
+.branch-create {
+  display: grid;
+  gap: 8px;
+}
+
+.remote-panel,
+.branch-ops {
+  display: grid;
+  gap: 8px;
+}
+
+.remote-branch-row,
+.branch-op-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.remote-branch-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-action {
+  background: #edf3ed;
+  border-color: #b9c9bd;
+  color: #21443a;
+}
+
+.secondary-action:hover:not(:disabled) {
+  background: #e1ece3;
+}
+
+.branch-delete {
+  display: grid;
+  gap: 8px;
+}
+
+.delete-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.delete-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sync-grid {
@@ -272,6 +386,29 @@ button:disabled {
   margin-top: 20px;
 }
 
+.log-content {
+  min-width: 0;
+}
+
+.log-content strong,
+.log-content small {
+  display: block;
+}
+
+.log-content small {
+  margin-top: 4px;
+  color: #766e61;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.bulk-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .change-group h4 {
   margin-bottom: 8px;
   font-size: 14px;
@@ -318,13 +455,7 @@ button:disabled {
 }
 
 .commit-box textarea {
-  width: 100%;
   resize: vertical;
-  border: 1px solid #cfc8ba;
-  border-radius: 6px;
-  padding: 10px;
-  background: #fffdf8;
-  color: #25231f;
 }
 
 .diff-panel {
@@ -379,6 +510,57 @@ button:disabled {
   gap: 10px;
 }
 
+.history-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 36%) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.history-detail-panel {
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.82);
+  padding: 16px;
+}
+
+.history-empty {
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  color: #766e61;
+}
+
+.history-meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.history-meta strong,
+.history-meta p {
+  margin: 0;
+}
+
+.history-summary {
+  margin: 0 0 14px;
+  padding: 12px;
+  border-radius: 6px;
+  background: #f7f1e6;
+  color: #433f37;
+  white-space: pre-wrap;
+  overflow: auto;
+  font: 12px/1.6 Consolas, "Courier New", monospace;
+}
+
+.history-diff {
+  min-height: 360px;
+}
+
+.hard-reset {
+  margin-bottom: 14px;
+}
+
 .commit-row {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
@@ -387,11 +569,27 @@ button:disabled {
   border: 1px solid #e0d7c8;
   border-radius: 6px;
   background: #fffdf8;
+  cursor: pointer;
+}
+
+.commit-row:hover,
+.commit-row.selected {
+  background: #f0eadf;
 }
 
 .hash {
   font-family: Consolas, monospace;
   color: #ba4b2d;
+}
+
+.danger-action {
+  background: #b83625;
+  border-color: #9d2f20;
+  color: #fff8ef;
+}
+
+.danger-action:hover:not(:disabled) {
+  background: #9d2f20;
 }
 
 .commit-row strong {
@@ -415,6 +613,10 @@ button:disabled {
   }
 
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-layout {
     grid-template-columns: 1fr;
   }
 }

@@ -37,6 +37,30 @@ function normalizeStatus(status) {
   }
 }
 
+function normalizeBranches(branchSummary) {
+  return {
+    current: branchSummary.current,
+    all: branchSummary.all
+  }
+}
+
+function normalizeRemoteBranches(branchSummary) {
+  return branchSummary.all.filter((branch) => !branch.endsWith('/HEAD'))
+}
+
+function parseWorktreePorcelain(output) {
+  const blocks = output.trim().split(/\r?\n\r?\n/).filter(Boolean)
+  return blocks.map((block) => {
+    const entry = { path: '', branch: '', head: '' }
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('worktree ')) entry.path = line.slice('worktree '.length)
+      if (line.startsWith('branch refs/heads/')) entry.branch = line.slice('branch refs/heads/'.length)
+      if (line.startsWith('HEAD ')) entry.head = line.slice('HEAD '.length)
+    }
+    return entry
+  })
+}
+
 export function createGitService() {
   return {
     isRepo(repoPath) {
@@ -58,8 +82,16 @@ export function createGitService() {
       return run(async () => gitAt(repoPath).add(filePath))
     },
 
+    stageAll(repoPath) {
+      return run(async () => gitAt(repoPath).add('.'))
+    },
+
     unstage(repoPath, filePath) {
       return run(async () => gitAt(repoPath).raw(['restore', '--staged', '--', filePath]))
+    },
+
+    unstageAll(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['restore', '--staged', '--', '.']))
     },
 
     commit(repoPath, message) {
@@ -76,6 +108,65 @@ export function createGitService() {
 
     log(repoPath) {
       return run(async () => gitAt(repoPath).log({ maxCount: 30 }))
+    },
+
+    branches(repoPath) {
+      return run(async () => normalizeBranches(await gitAt(repoPath).branchLocal()))
+    },
+
+    checkoutBranch(repoPath, branchName) {
+      return run(async () => gitAt(repoPath).checkout(branchName))
+    },
+
+    createBranch(repoPath, branchName) {
+      return run(async () => gitAt(repoPath).checkoutLocalBranch(branchName))
+    },
+
+    deleteBranch(repoPath, branchName, force = false) {
+      return run(async () => gitAt(repoPath).deleteLocalBranch(branchName, force))
+    },
+
+    remotes(repoPath) {
+      return run(async () => gitAt(repoPath).getRemotes(true))
+    },
+
+    remoteBranches(repoPath) {
+      return run(async () => normalizeRemoteBranches(await gitAt(repoPath).branch(['-r'])))
+    },
+
+    pushCurrentBranch(repoPath, remoteName = 'origin') {
+      return run(async () => gitAt(repoPath).push(remoteName, 'HEAD', { '--set-upstream': null }))
+    },
+
+    deleteRemoteBranch(repoPath, remoteName, branchName) {
+      return run(async () => gitAt(repoPath).raw(['push', remoteName, '--delete', branchName]))
+    },
+
+    mergeBranch(repoPath, branchName) {
+      return run(async () => gitAt(repoPath).merge([branchName]))
+    },
+
+    rebaseBranch(repoPath, branchName) {
+      return run(async () => gitAt(repoPath).rebase([branchName]))
+    },
+
+    worktrees(repoPath) {
+      return run(async () => parseWorktreePorcelain(await gitAt(repoPath).raw(['worktree', 'list', '--porcelain'])))
+    },
+
+    showCommit(repoPath, commitHash) {
+      return run(async () => ({
+        summary: await gitAt(repoPath).show(['--stat', '--format=fuller', commitHash]),
+        diff: await gitAt(repoPath).show([commitHash, '--format='])
+      }))
+    },
+
+    revertCommit(repoPath, commitHash) {
+      return run(async () => gitAt(repoPath).raw(['revert', '--no-edit', commitHash]))
+    },
+
+    hardResetToCommit(repoPath, commitHash) {
+      return run(async () => gitAt(repoPath).raw(['reset', '--hard', commitHash]))
     }
   }
 }

@@ -17,6 +17,15 @@ function statusText(file) {
       <span>{{ git.status?.files.length || 0 }} 个文件</span>
     </div>
 
+    <div class="bulk-actions">
+      <button type="button" :disabled="git.unstagedFiles.length === 0 || git.loading" @click="git.stageAll">
+        全部暂存
+      </button>
+      <button type="button" :disabled="git.stagedFiles.length === 0 || git.loading" @click="git.unstageAll">
+        全部取消暂存
+      </button>
+    </div>
+
     <div class="change-group">
       <h4>已暂存</h4>
       <p class="muted" v-if="git.stagedFiles.length === 0">暂无已暂存文件。</p>

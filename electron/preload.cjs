@@ -2,15 +2,32 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('desktopApi', {
   selectRepo: () => ipcRenderer.invoke('repo:select'),
+  openPath: (targetPath) => ipcRenderer.invoke('path:open', targetPath),
   git: {
     isRepo: (repoPath) => ipcRenderer.invoke('git:isRepo', repoPath),
     status: (repoPath) => ipcRenderer.invoke('git:status', repoPath),
     diff: (repoPath, filePath, staged = false) => ipcRenderer.invoke('git:diff', repoPath, filePath, staged),
     stage: (repoPath, filePath) => ipcRenderer.invoke('git:stage', repoPath, filePath),
+    stageAll: (repoPath) => ipcRenderer.invoke('git:stageAll', repoPath),
     unstage: (repoPath, filePath) => ipcRenderer.invoke('git:unstage', repoPath, filePath),
+    unstageAll: (repoPath) => ipcRenderer.invoke('git:unstageAll', repoPath),
     commit: (repoPath, message) => ipcRenderer.invoke('git:commit', repoPath, message),
     pull: (repoPath) => ipcRenderer.invoke('git:pull', repoPath),
     push: (repoPath) => ipcRenderer.invoke('git:push', repoPath),
-    log: (repoPath) => ipcRenderer.invoke('git:log', repoPath)
+    log: (repoPath) => ipcRenderer.invoke('git:log', repoPath),
+    branches: (repoPath) => ipcRenderer.invoke('git:branches', repoPath),
+    remoteBranches: (repoPath) => ipcRenderer.invoke('git:remoteBranches', repoPath),
+    checkoutBranch: (repoPath, branchName) => ipcRenderer.invoke('git:checkoutBranch', repoPath, branchName),
+    createBranch: (repoPath, branchName) => ipcRenderer.invoke('git:createBranch', repoPath, branchName),
+    deleteBranch: (repoPath, branchName, force = false) => ipcRenderer.invoke('git:deleteBranch', repoPath, branchName, force),
+    remotes: (repoPath) => ipcRenderer.invoke('git:remotes', repoPath),
+    pushCurrentBranch: (repoPath, remoteName) => ipcRenderer.invoke('git:pushCurrentBranch', repoPath, remoteName),
+    deleteRemoteBranch: (repoPath, remoteName, branchName) => ipcRenderer.invoke('git:deleteRemoteBranch', repoPath, remoteName, branchName),
+    worktrees: (repoPath) => ipcRenderer.invoke('git:worktrees', repoPath),
+    mergeBranch: (repoPath, branchName) => ipcRenderer.invoke('git:mergeBranch', repoPath, branchName),
+    rebaseBranch: (repoPath, branchName) => ipcRenderer.invoke('git:rebaseBranch', repoPath, branchName),
+    showCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:showCommit', repoPath, commitHash),
+    revertCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:revertCommit', repoPath, commitHash),
+    hardResetToCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:hardResetToCommit', repoPath, commitHash)
   }
 })
