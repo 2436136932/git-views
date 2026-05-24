@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
   color: #25231f;
   background: #f5f2eb;
@@ -45,7 +45,7 @@ button:disabled {
 
 .shell {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 380px minmax(0, 1fr);
   height: 100vh;
 }
 
@@ -619,4 +619,96 @@ button:disabled {
   .history-layout {
     grid-template-columns: 1fr;
   }
+}
+
+.remote-log-select {
+  margin-bottom: 12px;
+}
+
+
+.progress-panel {
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.82);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.progress-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.progress-tags span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f0eadf;
+  color: #5e564b;
+  font-size: 12px;
+}
+
+.progress-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.progress-actions button {
+  min-width: 0;
+}
+
+.guide-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.guide-card {
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.82);
+  padding: 16px;
+}
+
+.guide-list {
+  display: grid;
+  gap: 14px;
+}
+
+.guide-item strong,
+.guide-item p {
+  margin: 0;
+}
+
+.guide-item p {
+  margin-top: 6px;
+  color: #655d52;
+  line-height: 1.7;
+}
+
+@media (max-width: 980px) {
+  .guide-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.progress-summary,
+.progress-next {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  line-height: 1.6;
+}
+
+.progress-summary {
+  background: #f7f1e6;
+  color: #433f37;
+}
+
+.progress-next {
+  background: #edf3ed;
+  color: #21443a;
+  border: 1px solid #cdddcf;
 }

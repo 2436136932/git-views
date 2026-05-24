@@ -5,6 +5,8 @@ import ChangeList from './components/ChangeList.vue'
 import CommitBox from './components/CommitBox.vue'
 import DiffViewer from './components/DiffViewer.vue'
 import HistoryList from './components/HistoryList.vue'
+import RemoteHistoryList from './components/RemoteHistoryList.vue'
+import GitGuide from './components/GitGuide.vue'
 
 const git = useGitStore()
 const activeTab = ref('changes')
@@ -13,6 +15,7 @@ const mergeTarget = ref('')
 const rebaseTarget = ref('')
 
 const mergeOptions = computed(() => git.mergeCandidates)
+const mergeActionDisabled = computed(() => git.loading || git.hasBlockingGitOperation)
 
 watch(mergeOptions, (branches) => {
   if (!branches.includes(mergeTarget.value)) mergeTarget.value = ''
@@ -67,6 +70,33 @@ async function rebaseBranch() {
         <span class="tracking" v-if="git.status.tracking">跟踪 {{ git.status.tracking }}</span>
       </section>
 
+      <section class="progress-panel" v-if="git.hasRepo && git.hasGitStateIssue">
+        <div class="panel-title compact">
+          <h3>Git 进行中状态</h3>
+          <span>{{ git.gitStateSummary }}</span>
+        </div>
+
+        <div class="progress-tags">
+          <span v-if="git.gitState?.mergeInProgress">当前操作：merge</span>
+          <span v-if="git.gitState?.rebaseInProgress">当前操作：rebase</span>
+          <span v-if="git.gitState?.cherryPickInProgress">当前操作：cherry-pick</span>
+          <span v-if="git.gitState?.conflicts?.length > 0">冲突数量：{{ git.gitState.conflicts.length }}</span>
+        </div>
+
+        <p class="progress-summary" v-if="git.gitStateDetail">{{ git.gitStateDetail }}</p>
+        <p class="progress-next">下一步：{{ git.gitStateNextStep }}</p>
+        <p class="muted" v-if="git.gitState?.conflicts?.length > 0">冲突文件：{{ git.gitState.conflicts.join('、') }}</p>
+        <p class="muted">进行中的 Git 操作会限制部分按钮，先处理完成再继续其他分支操作。</p>
+
+        <div class="progress-actions">
+          <button type="button" :disabled="git.loading || !git.gitState?.rebaseInProgress" @click="git.continueRebase">继续 rebase</button>
+          <button type="button" :disabled="git.loading || !git.gitState?.rebaseInProgress" @click="git.abortRebase">中止 rebase</button>
+          <button type="button" :disabled="git.loading || !git.gitState?.mergeInProgress" @click="git.abortMerge">中止 merge</button>
+          <button type="button" :disabled="git.loading || !git.gitState?.cherryPickInProgress" @click="git.continueCherryPick">继续 cherry-pick</button>
+          <button type="button" :disabled="git.loading || !git.gitState?.cherryPickInProgress" @click="git.abortCherryPick">中止 cherry-pick</button>
+        </div>
+      </section>
+
       <section class="branch-panel" v-if="git.hasRepo">
         <div class="panel-title compact">
           <h3>分支</h3>
@@ -97,9 +127,12 @@ async function rebaseBranch() {
         </div>
 
         <div class="remote-panel" v-if="git.hasRemote">
-          <div class="panel-title compact">
+          <div class="panel-title compact with-help">
             <h3>远程分支</h3>
-            <span>{{ git.remoteBranches.length }} 个</span>
+            <div class="title-actions">
+              <button type="button" class="help-chip" @click="activeTab = 'guide'">?</button>
+              <span>{{ git.remoteBranches.length }} 个</span>
+            </div>
           </div>
 
           <button type="button" class="secondary-action" :disabled="git.loading" @click="git.pushCurrentBranch()">推送当前分支到远程</button>
@@ -111,24 +144,27 @@ async function rebaseBranch() {
         </div>
 
         <div class="branch-ops" v-if="git.mergeCandidates.length > 0">
-          <div class="panel-title compact">
+          <div class="panel-title compact with-help">
             <h3>合并 / 变基</h3>
+            <button type="button" class="help-chip" @click="activeTab = 'guide'">?</button>
           </div>
 
+          <p class="muted" v-if="git.hasBlockingGitOperation">当前仓库存在进行中的 Git 操作，合并和变基已暂时禁用。</p>
+
           <div class="branch-op-row">
-            <select v-model="mergeTarget" :disabled="git.loading">
+            <select v-model="mergeTarget" :disabled="mergeActionDisabled">
               <option value="">选择合并目标</option>
               <option v-for="branch in mergeOptions" :key="`merge-${branch}`" :value="branch">{{ branch }}</option>
             </select>
-            <button type="button" :disabled="git.loading || !mergeTarget" @click="mergeBranch">合并到当前分支</button>
+            <button type="button" :disabled="mergeActionDisabled || !mergeTarget" @click="mergeBranch">合并到当前分支</button>
           </div>
 
           <div class="branch-op-row">
-            <select v-model="rebaseTarget" :disabled="git.loading">
+            <select v-model="rebaseTarget" :disabled="mergeActionDisabled">
               <option value="">选择变基目标</option>
               <option v-for="branch in mergeOptions" :key="`rebase-${branch}`" :value="branch">{{ branch }}</option>
             </select>
-            <button type="button" :disabled="git.loading || !rebaseTarget" @click="rebaseBranch">当前分支变基到它</button>
+            <button type="button" :disabled="mergeActionDisabled || !rebaseTarget" @click="rebaseBranch">当前分支变基到它</button>
           </div>
         </div>
 
@@ -171,6 +207,8 @@ async function rebaseBranch() {
         <div class="tabs" v-if="git.hasRepo">
           <button :class="{ active: activeTab === 'changes' }" type="button" @click="activeTab = 'changes'">变更</button>
           <button :class="{ active: activeTab === 'history' }" type="button" @click="activeTab = 'history'">提交历史</button>
+          <button :class="{ active: activeTab === 'remote' }" type="button" @click="activeTab = 'remote'; git.loadRemoteLog(git.selectedRemoteBranch || git.remoteBranches[0])">远程记录</button>
+          <button :class="{ active: activeTab === 'guide' }" type="button" @click="activeTab = 'guide'">Git 知识库</button>
         </div>
       </header>
 
@@ -188,6 +226,8 @@ async function rebaseBranch() {
         </section>
         <DiffViewer />
       </div>
+      <RemoteHistoryList v-else-if="activeTab === 'remote'" />
+      <GitGuide v-else-if="activeTab === 'guide'" />
       <HistoryList v-else />
     </section>
   </main>

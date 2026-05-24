@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import simpleGit from 'simple-git'
 
 function gitAt(repoPath) {
@@ -61,6 +63,32 @@ function parseWorktreePorcelain(output) {
   })
 }
 
+function parseGitState(gitDir, statusOutput) {
+  const state = {
+    mergeInProgress: false,
+    rebaseInProgress: false,
+    cherryPickInProgress: false,
+    conflicts: [],
+    detail: ''
+  }
+
+  const has = (name) => fs.existsSync(path.join(gitDir, name))
+  state.mergeInProgress = has('MERGE_HEAD')
+  state.cherryPickInProgress = has('CHERRY_PICK_HEAD')
+  state.rebaseInProgress = has('rebase-apply') || has('rebase-merge')
+
+  const conflictFiles = (statusOutput.files || []).filter((file) => /^(U|AA|DD|AU|UA|DU|UD)/.test(`${file.index}${file.workingDir}`))
+  state.conflicts = conflictFiles.map((file) => file.path)
+
+  const hints = []
+  if (state.mergeInProgress) hints.push('merge in progress')
+  if (state.rebaseInProgress) hints.push('rebase in progress')
+  if (state.cherryPickInProgress) hints.push('cherry-pick in progress')
+  if (state.conflicts.length > 0) hints.push(`conflicts: ${state.conflicts.length}`)
+  state.detail = hints.join(', ')
+  return state
+}
+
 export function createGitService() {
   return {
     isRepo(repoPath) {
@@ -69,6 +97,16 @@ export function createGitService() {
 
     status(repoPath) {
       return run(async () => normalizeStatus(await gitAt(repoPath).status()))
+    },
+
+    state(repoPath) {
+      return run(async () => {
+        const git = gitAt(repoPath)
+        const gitDirRaw = await git.revparse(['--git-dir'])
+        const gitDir = path.resolve(repoPath, gitDirRaw.trim())
+        const status = normalizeStatus(await git.status())
+        return parseGitState(gitDir, status)
+      })
     },
 
     diff(repoPath, filePath, staged = false) {
@@ -134,6 +172,10 @@ export function createGitService() {
       return run(async () => normalizeRemoteBranches(await gitAt(repoPath).branch(['-r'])))
     },
 
+    remoteLog(repoPath, refName) {
+      return run(async () => gitAt(repoPath).log([refName, '--date=iso', '--max-count=30']))
+    },
+
     pushCurrentBranch(repoPath, remoteName = 'origin') {
       return run(async () => gitAt(repoPath).push(remoteName, 'HEAD', { '--set-upstream': null }))
     },
@@ -148,6 +190,26 @@ export function createGitService() {
 
     rebaseBranch(repoPath, branchName) {
       return run(async () => gitAt(repoPath).rebase([branchName]))
+    },
+
+    continueRebase(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['rebase', '--continue']))
+    },
+
+    abortRebase(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['rebase', '--abort']))
+    },
+
+    abortMerge(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['merge', '--abort']))
+    },
+
+    continueCherryPick(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['cherry-pick', '--continue']))
+    },
+
+    abortCherryPick(repoPath) {
+      return run(async () => gitAt(repoPath).raw(['cherry-pick', '--abort']))
     },
 
     worktrees(repoPath) {

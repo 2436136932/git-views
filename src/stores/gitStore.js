@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 
 function ensureDesktopApi() {
   if (!window.desktopApi) {
@@ -10,7 +10,7 @@ function ensureDesktopApi() {
 function normalizeGitMessage(message) {
   if (!message) return 'Git 操作失败。'
   if (message.includes('is already used by worktree')) {
-    return '该分支已被另一个 worktree 占用，当前仓库不能直接切换到它。'
+    return '该分支已被其他 worktree 占用，当前仓库不能直接切换到它。'
   }
   return message
 }
@@ -19,8 +19,12 @@ export const useGitStore = defineStore('git', {
   state: () => ({
     repoPath: '',
     status: null,
+    gitState: null,
     branches: [],
     remoteBranches: [],
+    remoteLog: [],
+    selectedRemoteBranch: '',
+    selectedRemoteCommit: null,
     currentBranch: '',
     currentRemote: 'origin',
     worktrees: [],
@@ -51,6 +55,55 @@ export const useGitStore = defineStore('git', {
     },
     canSync(state) {
       return !state.loading && state.hasRemote
+    },
+    gitStateSummary(state) {
+      const parts = []
+      if (state.gitState?.mergeInProgress) parts.push('合并中')
+      if (state.gitState?.rebaseInProgress) parts.push('变基中')
+      if (state.gitState?.cherryPickInProgress) parts.push('cherry-pick 中')
+      if ((state.gitState?.conflicts || []).length > 0) parts.push(`冲突 ${state.gitState.conflicts.length} 个`) 
+      return parts.length > 0 ? parts.join(' · ') : '无进行中的 Git 操作'
+    },
+    gitStateType(state) {
+      if (state.gitState?.mergeInProgress) return 'merge'
+      if (state.gitState?.rebaseInProgress) return 'rebase'
+      if (state.gitState?.cherryPickInProgress) return 'cherry-pick'
+      if ((state.gitState?.conflicts || []).length > 0) return 'conflicts'
+      return 'idle'
+    },
+    gitStateDetail(state) {
+      const parts = []
+      if (state.gitState?.mergeInProgress) parts.push('当前正在执行 merge。')
+      if (state.gitState?.rebaseInProgress) parts.push('当前正在执行 rebase。')
+      if (state.gitState?.cherryPickInProgress) parts.push('当前正在执行 cherry-pick。')
+      if ((state.gitState?.conflicts || []).length > 0) parts.push(`有 ${state.gitState.conflicts.length} 个冲突文件需要处理。`)
+      return parts.join(' ')
+    },
+    gitStateNextStep(state) {
+      if (state.gitState?.conflicts?.length > 0) {
+        return '先打开冲突文件，手动解决冲突并保存，然后继续当前操作。'
+      }
+      if (state.gitState?.rebaseInProgress) {
+        return '如果已解决冲突，点击“继续 rebase”；如果要放弃本次变基，点击“中止 rebase”。'
+      }
+      if (state.gitState?.mergeInProgress) {
+        return '如果已解决冲突，继续提交合并结果；如果要放弃本次合并，点击“中止 merge”。'
+      }
+      if (state.gitState?.cherryPickInProgress) {
+        return '如果已解决冲突，点击“继续 cherry-pick”；如果要放弃本次操作，点击“中止 cherry-pick”。'
+      }
+      return '当前没有阻塞性 Git 操作，可以继续正常提交、拉取、推送或切换分支。'
+    },
+    hasGitStateIssue(state) {
+      return Boolean(
+        state.gitState?.mergeInProgress ||
+        state.gitState?.rebaseInProgress ||
+        state.gitState?.cherryPickInProgress ||
+        (state.gitState?.conflicts || []).length > 0
+      )
+    },
+    hasBlockingGitOperation(state) {
+      return Boolean(state.gitState?.mergeInProgress || state.gitState?.rebaseInProgress || state.gitState?.cherryPickInProgress)
     },
     mergeCandidates(state) {
       return state.branches.filter((branch) => branch !== state.currentBranch)
@@ -112,13 +165,45 @@ export const useGitStore = defineStore('git', {
       }
 
       this.repoPath = path
+      this.gitState = null
       this.selectedFile = null
       this.diff = ''
       this.selectedCommit = null
+      this.selectedRemoteCommit = null
       this.commitDetail = null
       this.addCommandLog('打开仓库', path, true)
       await this.refreshAll()
       return true
+    },
+
+    async continueRebase() {
+      const result = await this.callGit('git rebase --continue', (api) => api.git.continueRebase(this.repoPath))
+      if (result?.ok) await this.refreshAll()
+      return result?.ok
+    },
+
+    async abortRebase() {
+      const result = await this.callGit('git rebase --abort', (api) => api.git.abortRebase(this.repoPath))
+      if (result?.ok) await this.refreshAll()
+      return result?.ok
+    },
+
+    async abortMerge() {
+      const result = await this.callGit('git merge --abort', (api) => api.git.abortMerge(this.repoPath))
+      if (result?.ok) await this.refreshAll()
+      return result?.ok
+    },
+
+    async continueCherryPick() {
+      const result = await this.callGit('git cherry-pick --continue', (api) => api.git.continueCherryPick(this.repoPath))
+      if (result?.ok) await this.refreshAll()
+      return result?.ok
+    },
+
+    async abortCherryPick() {
+      const result = await this.callGit('git cherry-pick --abort', (api) => api.git.abortCherryPick(this.repoPath))
+      if (result?.ok) await this.refreshAll()
+      return result?.ok
     },
 
     async openExternalPath(targetPath) {
@@ -146,6 +231,7 @@ export const useGitStore = defineStore('git', {
     async refreshAll() {
       await Promise.all([
         this.refreshStatus(),
+        this.refreshState(),
         this.refreshLog(),
         this.refreshBranches(),
         this.refreshRemoteBranches(),
@@ -159,6 +245,15 @@ export const useGitStore = defineStore('git', {
       await this.callGit('git status', async (api) => {
         const result = await api.git.status(this.repoPath)
         if (result.ok) this.status = result.data
+        return result
+      })
+    },
+
+    async refreshState() {
+      if (!this.repoPath) return
+      await this.callGit('git state', async (api) => {
+        const result = await api.git.state(this.repoPath)
+        if (result.ok) this.gitState = result.data
         return result
       })
     },
@@ -188,9 +283,39 @@ export const useGitStore = defineStore('git', {
       if (!this.repoPath) return
       await this.callGit('git branch -r', async (api) => {
         const result = await api.git.remoteBranches(this.repoPath)
-        if (result.ok) this.remoteBranches = result.data || []
+        if (result.ok) {
+          this.remoteBranches = result.data || []
+          if (!this.remoteBranches.includes(this.selectedRemoteBranch)) {
+            this.selectedRemoteBranch = this.remoteBranches[0] || ''
+            this.remoteLog = []
+            this.selectedRemoteCommit = null
+          }
+        }
         return result
       })
+    },
+
+    async loadRemoteLog(remoteBranch = this.selectedRemoteBranch) {
+      if (!this.repoPath || !remoteBranch) {
+        this.remoteLog = []
+        this.selectedRemoteBranch = remoteBranch || ''
+        this.selectedRemoteCommit = null
+        return false
+      }
+
+      this.selectedRemoteBranch = remoteBranch
+      const result = await this.callGit(`git log ${remoteBranch}`, async (api) => {
+        const response = await api.git.remoteLog(this.repoPath, remoteBranch)
+        if (response.ok) {
+          this.remoteLog = response.data?.all || []
+          if (!this.remoteLog.some((commit) => commit.hash === this.selectedRemoteCommit?.hash)) {
+            this.selectedRemoteCommit = null
+          }
+        }
+        return response
+      })
+
+      return result?.ok
     },
 
     async refreshRemotes() {
@@ -414,8 +539,18 @@ export const useGitStore = defineStore('git', {
       })
     },
 
+    async selectRemoteCommit(commit) {
+      this.selectedRemoteCommit = commit
+      this.selectedCommit = commit
+      await this.callGit(`git show ${commit.hash}`, async (api) => {
+        const result = await api.git.showCommit(this.repoPath, commit.hash)
+        if (result.ok) this.commitDetail = result.data
+        return result
+      })
+    },
+
     async revertCommit(commit) {
-      const confirmed = window.confirm(`确定要回退提交 ${commit.hash.slice(0, 7)} 吗？\n这会创建一条新的反向提交，不会删除历史。`)
+      const confirmed = window.confirm(`确定要回退提交 ${commit.hash.slice(0, 7)} 吗？\n这会创建一个新的反向提交，不会删除历史。`)
       if (!confirmed) return false
 
       const result = await this.callGit(`git revert ${commit.hash}`, (api) => api.git.revertCommit(this.repoPath, commit.hash))
