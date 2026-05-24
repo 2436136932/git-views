@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('desktopApi', {
   openPath: (targetPath) => ipcRenderer.invoke('path:open', targetPath),
   git: {
     isRepo: (repoPath) => ipcRenderer.invoke('git:isRepo', repoPath),
+    init: (repoPath) => ipcRenderer.invoke('git:init', repoPath),
+    addRemote: (repoPath, name, url) => ipcRenderer.invoke('git:addRemote', repoPath, name, url),
+    setRemoteUrl: (repoPath, name, url) => ipcRenderer.invoke('git:setRemoteUrl', repoPath, name, url),
     status: (repoPath) => ipcRenderer.invoke('git:status', repoPath),
     state: (repoPath) => ipcRenderer.invoke('git:state', repoPath),
     diff: (repoPath, filePath, staged = false) => ipcRenderer.invoke('git:diff', repoPath, filePath, staged),
@@ -35,6 +38,37 @@ contextBridge.exposeInMainWorld('desktopApi', {
     abortCherryPick: (repoPath) => ipcRenderer.invoke('git:abortCherryPick', repoPath),
     showCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:showCommit', repoPath, commitHash),
     revertCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:revertCommit', repoPath, commitHash),
-    hardResetToCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:hardResetToCommit', repoPath, commitHash)
+    hardResetToCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:hardResetToCommit', repoPath, commitHash),
+    readFile: (repoPath, filePath) => ipcRenderer.invoke('git:readFile', repoPath, filePath)
+  },
+
+  // ── GitHub 仓库信息 ──
+  github: {
+    info: (remoteUrl) => ipcRenderer.invoke('github:info', remoteUrl)
+  },
+
+  // ── 自动更新 ──
+  update: {
+    onChecking: (callback) => {
+      ipcRenderer.on('update:checking', () => callback())
+    },
+    onAvailable: (callback) => {
+      ipcRenderer.on('update:available', (_event, info) => callback(info))
+    },
+    onNotAvailable: (callback) => {
+      ipcRenderer.on('update:not-available', () => callback())
+    },
+    onProgress: (callback) => {
+      ipcRenderer.on('update:progress', (_event, progress) => callback(progress))
+    },
+    onDownloaded: (callback) => {
+      ipcRenderer.on('update:downloaded', () => callback())
+    },
+    onError: (callback) => {
+      ipcRenderer.on('update:error', (_event, message) => callback(message))
+    },
+    startDownload: () => ipcRenderer.invoke('update:startDownload'),
+    install: () => ipcRenderer.invoke('update:install'),
+    checkNow: () => ipcRenderer.invoke('update:checkNow')
   }
 })

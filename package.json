@@ -1,25 +1,58 @@
 {
-  "name": "git-visual-prototype",
+  "name": "git-views",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
+  "author": "2436136932",
   "scripts": {
     "dev": "vite",
     "electron": "electron .",
     "start": "concurrently \"npm run dev -- --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build",
+    "build:win": "vite build && electron-builder --win",
+    "publish": "vite build && electron-builder --win --publish always",
     "preview": "vite preview"
   },
+  "build": {
+    "appId": "com.2436136932.git-views",
+    "productName": "Git操作台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "2436136932",
+      "repo": "git-views"
+    }
+  },
   "dependencies": {
-    "@vitejs/plugin-vue": "latest",
-    "vite": "latest",
-    "vue": "latest",
+    "electron-updater": "^6.8.3",
     "pinia": "latest",
     "simple-git": "latest",
-    "electron": "latest",
-    "concurrently": "latest",
-    "wait-on": "latest"
+    "vue": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "vite": "latest",
+    "wait-on": "latest"
+  }
 }

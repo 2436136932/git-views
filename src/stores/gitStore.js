@@ -37,7 +37,11 @@ export const useGitStore = defineStore('git', {
     commitDetail: null,
     loading: false,
     error: '',
-    commandLog: []
+    commandLog: [],
+    githubInfo: null,
+    githubLoading: false,
+    githubError: '',
+    successMessage: ''
   }),
 
   getters: {
@@ -139,8 +143,68 @@ export const useGitStore = defineStore('git', {
   },
 
   actions: {
+    async initRepo() {
+      const wasLoading = this.loading
+      if (!wasLoading) this.loading = true
+      this.error = ''
+
+      try {
+        const api = ensureDesktopApi()
+        const path = await api.selectRepo()
+        if (!path) return false
+
+        const initResult = await api.git.init(path)
+        if (!initResult.ok) {
+          this.error = initResult.message || '初始化 Git 仓库失败'
+          this.addCommandLog('git init', initResult.message || '失败', false)
+          return false
+        }
+
+        this.addCommandLog('git init', path, true)
+        await this.openRepo(path)
+        this.successMessage = '仓库初始化成功'
+        this.clearSuccessAfter()
+        return true
+      } catch (error) {
+        this.error = error.message
+        this.addCommandLog('git init', error.message, false)
+        return false
+      } finally {
+        if (!wasLoading) this.loading = false
+      }
+    },
+
+    async addRemote(name, url) {
+      if (!name.trim() || !url.trim()) {
+        this.error = '远程仓库名称和 URL 不能为空。'
+        return false
+      }
+
+      const trimmedName = name.trim()
+      const trimmedUrl = url.trim()
+
+      // 先尝试添加 — 如果 remote 已存在则自动改为更新 URL
+      const result = await this.callGit('git remote add', (api) => api.git.addRemote(this.repoPath, trimmedName, trimmedUrl))
+
+      if (!result?.ok && result?.message?.includes('already exists')) {
+        const updateResult = await this.callGit('git remote set-url', (api) => api.git.setRemoteUrl(this.repoPath, trimmedName, trimmedUrl))
+        if (updateResult?.ok) {
+          this.successMessage = '远程仓库 URL 已更新'
+          this.clearSuccessAfter()
+          await this.refreshAll()
+        }
+        return updateResult?.ok
+      }
+
+      if (result?.ok) {
+        await this.refreshAll()
+      }
+      return result?.ok
+    },
+
     async selectRepo() {
-      this.loading = true
+      const wasLoading = this.loading
+      if (!wasLoading) this.loading = true
       this.error = ''
 
       try {
@@ -152,7 +216,7 @@ export const useGitStore = defineStore('git', {
         this.error = error.message
         this.addCommandLog('打开仓库', error.message, false)
       } finally {
-        this.loading = false
+        if (!wasLoading) this.loading = false
       }
     },
 
@@ -166,6 +230,8 @@ export const useGitStore = defineStore('git', {
 
       this.repoPath = path
       this.gitState = null
+      this.githubInfo = null
+      this.githubError = ''
       this.selectedFile = null
       this.diff = ''
       this.selectedCommit = null
@@ -215,7 +281,8 @@ export const useGitStore = defineStore('git', {
     },
 
     async switchToWorktree(targetPath) {
-      this.loading = true
+      const wasLoading = this.loading
+      if (!wasLoading) this.loading = true
       this.error = ''
       try {
         return await this.openRepo(targetPath)
@@ -224,20 +291,34 @@ export const useGitStore = defineStore('git', {
         this.addCommandLog('切换到 worktree', error.message, false)
         return false
       } finally {
-        this.loading = false
+        if (!wasLoading) this.loading = false
       }
     },
 
     async refreshAll() {
-      await Promise.all([
-        this.refreshStatus(),
-        this.refreshState(),
-        this.refreshLog(),
-        this.refreshBranches(),
-        this.refreshRemoteBranches(),
-        this.refreshRemotes(),
-        this.refreshWorktrees()
-      ])
+      const wasLoading = this.loading
+      if (!wasLoading) this.loading = true
+      try {
+        await Promise.all([
+          this.refreshStatus(),
+          this.refreshState(),
+          this.refreshLog(),
+          this.refreshBranches(),
+          this.refreshRemoteBranches(),
+          this.refreshRemotes(),
+          this.refreshWorktrees(),
+          this.refreshGitHubInfo()
+        ])
+      } finally {
+        // 后处理：空仓库时 git branch 不返回分支，用 status 补充
+        if (!this.currentBranch && this.status?.current) {
+          this.currentBranch = this.status.current
+          if (!this.branches.includes(this.currentBranch)) {
+            this.branches = [this.currentBranch, ...this.branches]
+          }
+        }
+        if (!wasLoading) this.loading = false
+      }
     },
 
     async refreshStatus() {
@@ -265,6 +346,11 @@ export const useGitStore = defineStore('git', {
         if (result.ok) this.log = result.data.all || []
         return result
       })
+      // 刚 init 的空仓库没有提交记录，这不是错误
+      if (this.error?.includes('does not have any commits yet')) {
+        this.error = ''
+        this.log = []
+      }
     },
 
     async refreshBranches() {
@@ -330,6 +416,33 @@ export const useGitStore = defineStore('git', {
       })
     },
 
+    async refreshGitHubInfo() {
+      if (!this.repoPath) return
+      this.githubLoading = true
+      this.githubError = ''
+      try {
+        const api = ensureDesktopApi()
+        const remotes = await api.git.remotes(this.repoPath)
+        if (remotes.ok && remotes.data?.length > 0) {
+          const remoteUrl = remotes.data[0].refs?.fetch || ''
+          const result = await api.github.info(remoteUrl)
+          if (result.ok) {
+            this.githubInfo = result.data
+          } else {
+            this.githubInfo = null
+            this.githubError = result.message
+          }
+        } else {
+          this.githubInfo = null
+        }
+      } catch (error) {
+        this.githubInfo = null
+        this.githubError = error.message || '获取 GitHub 信息失败'
+      } finally {
+        this.githubLoading = false
+      }
+    },
+
     async refreshWorktrees() {
       if (!this.repoPath) return
       await this.callGit('git worktree list', async (api) => {
@@ -362,6 +475,11 @@ export const useGitStore = defineStore('git', {
       const normalized = branchName.trim()
       if (!normalized) {
         this.error = '分支名不能为空。'
+        return false
+      }
+
+      if (this.branches.includes(normalized)) {
+        this.error = `分支 ${normalized} 已存在。`
         return false
       }
 
@@ -450,7 +568,9 @@ export const useGitStore = defineStore('git', {
       if (!confirmed) return false
 
       const result = await this.callGit(`git merge ${branchName}`, (api) => api.git.mergeBranch(this.repoPath, branchName))
+      const savedError = this.error
       await this.refreshAll()
+      if (savedError) this.error = savedError
       return result?.ok
     },
 
@@ -460,7 +580,9 @@ export const useGitStore = defineStore('git', {
       if (!confirmed) return false
 
       const result = await this.callGit(`git rebase ${branchName}`, (api) => api.git.rebaseBranch(this.repoPath, branchName))
+      const savedError = this.error
       await this.refreshAll()
+      if (savedError) this.error = savedError
       return result?.ok
     },
 
@@ -469,14 +591,30 @@ export const useGitStore = defineStore('git', {
       this.selectedDiffStaged = staged
       await this.callGit(staged ? `git diff --cached ${file.path}` : `git diff ${file.path}`, async (api) => {
         const result = await api.git.diff(this.repoPath, file.path, staged)
-        if (result.ok) this.diff = result.data || '这个文件当前没有可显示的 diff。'
+        if (result.ok) {
+          // 未跟踪的新文件没有 diff，改为读取文件内容作为预览
+          if (!result.data && file.index === '?') {
+            try {
+              const raw = await api.git.readFile(this.repoPath, file.path)
+              if (raw.ok) {
+                this.diff = '📄 未跟踪文件 — 内容预览：\n\n' + raw.data
+              } else {
+                this.diff = '无法读取文件内容（可能为二进制文件）'
+              }
+            } catch {
+              this.diff = '无法读取文件内容'
+            }
+          } else {
+            this.diff = result.data || '这个文件当前没有可显示的 diff。'
+          }
+        }
         return result
       })
     },
 
     async stage(file) {
       await this.callGit(`git add ${file.path}`, (api) => api.git.stage(this.repoPath, file.path))
-      await this.afterMutation(file)
+      await this.afterMutation(file, true)
     },
 
     async stageAll() {
@@ -486,7 +624,7 @@ export const useGitStore = defineStore('git', {
 
     async unstage(file) {
       await this.callGit(`git restore --staged ${file.path}`, (api) => api.git.unstage(this.repoPath, file.path))
-      await this.afterMutation(file)
+      await this.afterMutation(file, false)
     },
 
     async unstageAll() {
@@ -515,9 +653,11 @@ export const useGitStore = defineStore('git', {
         this.error = '当前仓库没有配置远程仓库，无法拉取。'
         return false
       }
-      await this.callGit('git pull', (api) => api.git.pull(this.repoPath))
+      const result = await this.callGit('git pull', (api) => api.git.pull(this.repoPath))
+      const savedError = this.error
       await this.refreshAll()
-      return true
+      if (savedError) this.error = savedError
+      return result?.ok ?? false
     },
 
     async push() {
@@ -525,9 +665,11 @@ export const useGitStore = defineStore('git', {
         this.error = '当前仓库没有配置远程仓库，无法推送。'
         return false
       }
-      await this.callGit('git push', (api) => api.git.push(this.repoPath))
+      const result = await this.callGit('git push', (api) => api.git.pushCurrentBranch(this.repoPath, this.currentRemote))
+      const savedError = this.error
       await this.refreshAll()
-      return true
+      if (savedError) this.error = savedError
+      return result?.ok ?? false
     },
 
     async selectCommit(commit) {
@@ -576,9 +718,9 @@ export const useGitStore = defineStore('git', {
       return result?.ok
     },
 
-    async afterMutation(file) {
+    async afterMutation(file, stagedForDiff) {
       await this.refreshStatus()
-      if (file) await this.showDiff(file, this.selectedDiffStaged)
+      if (file) await this.showDiff(file, stagedForDiff ?? this.selectedDiffStaged)
     },
 
     async afterBulkMutation(ok) {
@@ -590,7 +732,8 @@ export const useGitStore = defineStore('git', {
     },
 
     async callGit(label, operation) {
-      this.loading = true
+      const wasLoading = this.loading
+      if (!wasLoading) this.loading = true
       this.error = ''
 
       try {
@@ -605,7 +748,7 @@ export const useGitStore = defineStore('git', {
         this.addCommandLog(label, detail, false)
         return { ok: false, message: detail }
       } finally {
-        this.loading = false
+        if (!wasLoading) this.loading = false
       }
     },
 
@@ -618,6 +761,12 @@ export const useGitStore = defineStore('git', {
         time: new Date().toLocaleTimeString()
       })
       this.commandLog = this.commandLog.slice(0, 40)
+    },
+
+    clearSuccessAfter(delay = 3000) {
+      setTimeout(() => {
+        this.successMessage = ''
+      }, delay)
     }
   }
 })

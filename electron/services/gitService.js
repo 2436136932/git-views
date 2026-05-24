@@ -33,7 +33,7 @@ function normalizeStatus(status) {
       path: file.path,
       index: file.index,
       workingDir: file.working_dir,
-      staged: file.index !== ' ' && file.index !== '?',
+      staged: file.index !== ' ' && file.index !== '?' && file.index !== 'U',
       unstaged: file.working_dir !== ' ' || file.index === '?'
     }))
   }
@@ -93,6 +93,18 @@ export function createGitService() {
   return {
     isRepo(repoPath) {
       return run(async () => gitAt(repoPath).checkIsRepo())
+    },
+
+    init(repoPath) {
+      return run(async () => gitAt(repoPath).init())
+    },
+
+    addRemote(repoPath, name, url) {
+      return run(async () => gitAt(repoPath).addRemote(name, url))
+    },
+
+    setRemoteUrl(repoPath, name, url) {
+      return run(async () => gitAt(repoPath).raw(['remote', 'set-url', name, url]))
     },
 
     status(repoPath) {
@@ -229,6 +241,18 @@ export function createGitService() {
 
     hardResetToCommit(repoPath, commitHash) {
       return run(async () => gitAt(repoPath).raw(['reset', '--hard', commitHash]))
+    },
+
+    readFileContent(repoPath, filePath) {
+      return run(async () => {
+        const repoRoot = path.resolve(repoPath)
+        const fullPath = path.resolve(repoPath, filePath)
+        if (!fullPath.startsWith(repoRoot + path.sep) && fullPath !== repoRoot) {
+          throw new Error('文件路径超出仓库范围')
+        }
+        const content = fs.readFileSync(fullPath, 'utf-8')
+        return content
+      })
     }
   }
 }

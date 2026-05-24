@@ -16,3 +16,6 @@ pnpm-debug.log*
 .vscode/
 .claude/
 Thumbs.db
+
+# Build output
+release/

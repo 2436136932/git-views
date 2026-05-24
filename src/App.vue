@@ -33,10 +33,64 @@ async function mergeBranch() {
   if (ok || !mergeOptions.value.includes(target)) mergeTarget.value = ''
 }
 
+// ── 配置远程仓库 ──
+const showRemoteForm = ref(false)
+const remoteName = ref('origin')
+const remoteUrl = ref('')
+
+async function connectRemote() {
+  const ok = await git.addRemote(remoteName.value, remoteUrl.value)
+  if (ok) {
+    showRemoteForm.value = false
+    remoteUrl.value = ''
+    remoteName.value = 'origin'
+  }
+}
+
 async function rebaseBranch() {
   const target = rebaseTarget.value
   const ok = await git.rebaseBranch(target)
   if (ok || !mergeOptions.value.includes(target)) rebaseTarget.value = ''
+}
+
+// ── 自动更新 ──
+const updatePhase = ref('idle') // idle | checking | available | downloading | downloaded | error
+const updateVersion = ref('')
+const updateProgress = ref(0)
+const updateError = ref('')
+
+const updateApi = window.desktopApi?.update
+
+if (updateApi) {
+  updateApi.onChecking(() => {
+    updatePhase.value = 'checking'
+  })
+  updateApi.onAvailable((info) => {
+    updateVersion.value = info.version
+    updatePhase.value = 'available'
+  })
+  updateApi.onNotAvailable(() => {
+    updatePhase.value = 'idle'
+  })
+  updateApi.onProgress((progress) => {
+    updatePhase.value = 'downloading'
+    updateProgress.value = progress.percent
+  })
+  updateApi.onDownloaded(() => {
+    updatePhase.value = 'downloaded'
+  })
+  updateApi.onError((message) => {
+    updateError.value = message
+    updatePhase.value = 'error'
+  })
+}
+
+function startUpdateDownload() {
+  updateApi?.startDownload()
+}
+
+function installUpdate() {
+  updateApi?.install()
 }
 </script>
 
@@ -51,11 +105,53 @@ async function rebaseBranch() {
         </div>
       </div>
 
-      <button class="primary-action" type="button" :disabled="git.loading" @click="git.selectRepo">打开仓库</button>
+      <div class="action-row">
+        <button class="primary-action" type="button" :disabled="git.loading" @click="git.selectRepo">打开仓库</button>
+        <button class="secondary-action repo-init" type="button" :disabled="git.loading" @click="git.initRepo">{{ git.loading ? '初始化中…' : '新建仓库' }}</button>
+      </div>
 
       <section class="repo-panel" v-if="git.hasRepo">
         <span class="label">当前仓库</span>
         <strong>{{ git.repoPath }}</strong>
+      </section>
+
+      <section class="github-panel" v-if="git.hasRepo">
+        <div class="panel-title compact">
+          <h3>GitHub</h3>
+        </div>
+
+        <div class="github-loading" v-if="git.githubLoading">
+          <span class="update-spinner"></span>
+          <span>加载中…</span>
+        </div>
+
+        <template v-else-if="git.githubInfo">
+          <div class="github-header">
+            <span class="github-icon">🐙</span>
+            <strong>{{ git.githubInfo.fullName }}</strong>
+          </div>
+          <p class="github-desc" v-if="git.githubInfo.description">{{ git.githubInfo.description }}</p>
+          <div class="github-stats">
+            <span>★ {{ git.githubInfo.stars }}</span>
+            <span>🍴 {{ git.githubInfo.forks }}</span>
+            <span v-if="git.githubInfo.language" class="github-lang">{{ git.githubInfo.language }}</span>
+          </div>
+          <p class="github-issues" v-if="git.githubInfo.openIssues > 0">⚠ {{ git.githubInfo.openIssues }} 个未关闭 Issue</p>
+        </template>
+
+        <div class="github-empty" v-else>
+          <p class="muted">{{ git.githubError || '未连接到 GitHub 远程仓库' }}</p>
+          <button class="secondary-action" type="button" :disabled="git.loading" @click="showRemoteForm = !showRemoteForm">
+            {{ showRemoteForm ? '取消' : '配置远程仓库' }}
+          </button>
+          <div class="remote-form" v-if="showRemoteForm">
+            <input v-model="remoteName" type="text" placeholder="Remote 名称" :disabled="git.loading" />
+            <input v-model="remoteUrl" type="text" placeholder="例如 https://github.com/owner/repo.git" :disabled="git.loading" />
+            <button type="button" :disabled="git.loading || !remoteName.trim() || !remoteUrl.trim()" @click="connectRemote">
+              确认连接
+            </button>
+          </div>
+        </div>
       </section>
 
       <section class="status-panel" v-if="git.status">
@@ -135,8 +231,6 @@ async function rebaseBranch() {
             </div>
           </div>
 
-          <button type="button" class="secondary-action" :disabled="git.loading" @click="git.pushCurrentBranch()">推送当前分支到远程</button>
-
           <article class="remote-branch-row" v-for="branch in git.remoteBranches" :key="branch">
             <span>{{ branch }}</span>
             <button type="button" class="danger-action" :disabled="git.loading" @click="git.deleteRemoteBranch(branch)">删除远程分支</button>
@@ -213,6 +307,7 @@ async function rebaseBranch() {
       </header>
 
       <p class="error" v-if="git.error">{{ git.error }}</p>
+      <p class="success" v-if="git.successMessage">{{ git.successMessage }}</p>
 
       <div class="empty-state" v-if="!git.hasRepo">
         <h3>先打开一个本地 Git 仓库</h3>
@@ -230,5 +325,35 @@ async function rebaseBranch() {
       <GitGuide v-else-if="activeTab === 'guide'" />
       <HistoryList v-else />
     </section>
+
+    <!-- ── 自动更新横幅 ── -->
+    <div class="update-banner" v-if="updatePhase !== 'idle'">
+      <template v-if="updatePhase === 'checking'">
+        <span class="update-spinner"></span>
+        <span>正在检查更新…</span>
+      </template>
+
+      <template v-else-if="updatePhase === 'available'">
+        <span>发现新版本 <strong>v{{ updateVersion }}</strong></span>
+        <button class="update-btn" type="button" @click="startUpdateDownload">下载更新</button>
+      </template>
+
+      <template v-else-if="updatePhase === 'downloading'">
+        <span>正在下载更新…</span>
+        <div class="update-progress-bar">
+          <div class="update-progress-fill" :style="{ width: updateProgress + '%' }"></div>
+        </div>
+        <span class="update-pct">{{ updateProgress }}%</span>
+      </template>
+
+      <template v-else-if="updatePhase === 'downloaded'">
+        <span>更新已下载</span>
+        <button class="update-btn install" type="button" @click="installUpdate">立即安装</button>
+      </template>
+
+      <template v-else-if="updatePhase === 'error'">
+        <span class="update-error">检查更新失败：{{ updateError }}</span>
+      </template>
+    </div>
   </main>
 </template>
