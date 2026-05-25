@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useRecentStore } from './recentStore.js'
 
 function ensureDesktopApi() {
   if (!window.desktopApi) {
@@ -241,6 +242,7 @@ export const useGitStore = defineStore('git', {
       this.commitDetail = null
       this.addCommandLog('打开仓库', path, true)
       await this.refreshAll()
+      this.recordRecent(path)
       return true
     },
 
@@ -278,6 +280,58 @@ export const useGitStore = defineStore('git', {
       const result = await this.callGit('git cherry-pick --abort', (api) => api.git.abortCherryPick(this.repoPath))
       if (result?.ok) await this.refreshAll()
       return result?.ok
+    },
+
+    closeRepo() {
+      this.repoPath = ''
+      this.status = null
+      this.gitState = null
+      this.branches = []
+      this.remoteBranches = []
+      this.remoteLog = []
+      this.selectedRemoteBranch = ''
+      this.selectedRemoteCommit = null
+      this.currentBranch = ''
+      this.hasRemote = false
+      this.log = []
+      this.selectedFile = null
+      this.diff = ''
+      this.selectedCommit = null
+      this.commitDetail = null
+      this.githubInfo = null
+      this.githubError = ''
+      this.error = ''
+      this.successMessage = ''
+      this.commandLog = []
+    },
+
+    closeRepo() {
+      this.repoPath = ''
+      this.status = null
+      this.gitState = null
+      this.branches = []
+      this.remoteBranches = []
+      this.remoteLog = []
+      this.selectedRemoteBranch = ''
+      this.selectedRemoteCommit = null
+      this.currentBranch = ''
+      this.hasRemote = false
+      this.log = []
+      this.selectedFile = null
+      this.diff = ''
+      this.selectedCommit = null
+      this.commitDetail = null
+      this.githubInfo = null
+      this.githubError = ''
+      this.error = ''
+      this.successMessage = ''
+      this.commandLog = []
+    },
+
+    recordRecent(path) {
+      try {
+        useRecentStore().addRecent(path, this.currentBranch)
+      } catch(e) {}
     },
 
     async openExternalPath(targetPath) {
@@ -605,6 +659,11 @@ export const useGitStore = defineStore('git', {
       await this.callGit(staged ? `git diff --cached ${file.path}` : `git diff ${file.path}`, async (api) => {
         const result = await api.git.diff(this.repoPath, file.path, staged)
         if (result.ok) {
+          // Binary file detection
+          if (result.data && /^Binary files/i.test(result.data)) {
+            this.diff = '这是二进制文件，无法显示文本 diff。\n文件: ' + file.path + '\n请使用外部工具查看或编辑此文件。'
+            return result
+          }
           // 未跟踪的新文件没有 diff，改为读取文件内容作为预览
           if (!result.data && file.index === '?') {
             try {

@@ -8,12 +8,18 @@ import HistoryList from './components/HistoryList.vue'
 import RemoteHistoryList from './components/RemoteHistoryList.vue'
 import GitBadge from './components/GitBadge.vue'
 import GitGuide from './components/GitGuide.vue'
+import RepoHome from './components/RepoHome.vue'
+import { useRecentStore } from './stores/recentStore.js'
 
 const git = useGitStore()
+const recent = useRecentStore()
 const activeTab = ref('changes')
 const newBranchName = ref('')
 const mergeTarget = ref('')
 const rebaseTarget = ref('')
+const branchSearch = ref('')
+const remoteBranchSearch = ref('')
+const deleteBranchSearch = ref('')
 
 const mergeOptions = computed(() => git.mergeCandidates)
 const mergeActionDisabled = computed(() => git.loading || git.hasBlockingGitOperation)
@@ -47,9 +53,37 @@ function showConflict(filePath) {
   activeTab.value = 'changes'
 }
 
+const filteredBranchOptions = computed(() => {
+  const q = branchSearch.value.toLowerCase().trim()
+  if (!q) return git.branchOptions
+  return git.branchOptions.filter(b => b.name.toLowerCase().includes(q))
+})
+
+const filteredRemoteBranches = computed(() => {
+  const q = remoteBranchSearch.value.toLowerCase().trim()
+  if (!q) return git.remoteBranches
+  return git.remoteBranches.filter(b => b.toLowerCase().includes(q))
+})
+
+const filteredDeletableBranches = computed(() => {
+  const q = deleteBranchSearch.value.toLowerCase().trim()
+  const candidates = git.branches.filter(b => b !== git.currentBranch)
+  if (!q) return candidates
+  return candidates.filter(b => b.toLowerCase().includes(q))
+})
+
 const showRemoteForm = ref(false)
 const remoteName = ref('origin')
 const remoteUrl = ref('')
+
+async function openRepoFromHome(path) {
+  if (path) {
+    await git.openRepo(path)
+  } else {
+    await git.selectRepo()
+  }
+  if (git.hasRepo) activeTab.value = 'changes'
+}
 
 async function connectRemote() {
   const ok = await git.addRemote(remoteName.value, remoteUrl.value)
@@ -126,6 +160,7 @@ function installUpdate() {
           <h1>Git 操作台</h1>
           <p>基础 Git 可视化原型</p>
         </div>
+        <button v-if="git.hasRepo" class="close-repo-btn" type="button" @click="git.closeRepo(); activeTab = 'changes'" title="关闭仓库返回首页">⌂</button>
       </div>
 
       <div class="action-row">
@@ -227,8 +262,9 @@ function installUpdate() {
           <span>{{ git.branches.length }} 个</span>
         </div>
 
+        <input v-model="branchSearch" type="text" class="search-input" placeholder="搜索分支..." />
         <select class="branch-select" :value="git.currentBranch" :disabled="git.loading" @change="git.checkoutBranch($event.target.value)">
-          <option v-for="branch in git.branchOptions" :key="branch.name" :value="branch.name" :disabled="branch.occupied">
+          <option v-for="branch in filteredBranchOptions" :key="branch.name" :value="branch.name" :disabled="branch.occupied">
             {{ branch.occupied ? `${branch.name}（已被 worktree 占用）` : branch.name }}
           </option>
         </select>
@@ -259,7 +295,8 @@ function installUpdate() {
             </div>
           </div>
 
-          <article class="remote-branch-row" v-for="branch in git.remoteBranches" :key="branch">
+          <input v-model="remoteBranchSearch" type="text" class="search-input" placeholder="搜索远程分支..." />
+          <article class="remote-branch-row" v-for="branch in filteredRemoteBranches" :key="branch">
             <span>{{ branch }}</span>
             <button type="button" class="danger-action" :disabled="git.loading" @click="git.deleteRemoteBranch(branch)">删除远程分支</button>
           </article>
@@ -292,7 +329,8 @@ function installUpdate() {
 
         <div class="branch-delete" v-if="git.branches.filter((branch) => branch !== git.currentBranch).length > 0">
           <p class="muted">删除分支：</p>
-          <div class="delete-row" v-for="branch in git.branches.filter((name) => name !== git.currentBranch)" :key="branch">
+          <input v-model="deleteBranchSearch" type="text" class="search-input" placeholder="搜索要删除的分支..." />
+          <div class="delete-row" v-for="branch in filteredDeletableBranches" :key="branch">
             <span>{{ branch }}</span>
             <button type="button" class="danger-action" :disabled="git.loading" @click="git.deleteBranch(branch)">删除</button>
           </div>
@@ -342,11 +380,7 @@ function installUpdate() {
 
       <GitGuide v-if="activeTab === 'guide'" />
 
-      <div class="empty-state" v-else-if="!git.hasRepo">
-        <h3>先打开一个本地 Git 仓库</h3>
-        <p>原型会读取仓库状态、分支信息、文件变更、diff、提交历史，并支持暂存、取消暂存、提交、拉取、推送和版本回退。</p>
-        <button type="button" class="secondary-action" @click="activeTab = 'guide'">先看首次使用引导</button>
-      </div>
+      <RepoHome v-else-if="!git.hasRepo" @open="openRepoFromHome" @init="git.initRepo" @guide="activeTab = 'guide'" />
 
       <div class="content-grid" v-else-if="activeTab === 'changes'">
         <section class="left-pane">

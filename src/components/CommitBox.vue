@@ -12,6 +12,24 @@ const commitHint = computed(() => {
   return '只会提交“已暂存”区域中的文件变更。'
 })
 
+const templates = [
+  { prefix: 'feat:', label: '新功能', desc: '添加新特性' },
+  { prefix: 'fix:', label: '修复', desc: '修复 Bug' },
+  { prefix: 'refactor:', label: '重构', desc: '代码重构' },
+  { prefix: 'docs:', label: '文档', desc: '文档更新' },
+  { prefix: 'style:', label: '样式', desc: '格式调整' },
+  { prefix: 'test:', label: '测试', desc: '测试相关' },
+  { prefix: 'chore:', label: '杂项', desc: '构建/工具' }
+]
+
+function insertTemplate(prefix) {
+  if (message.value.startsWith(prefix)) {
+    message.value = message.value.slice(prefix.length)
+  } else {
+    message.value = prefix + ' ' + message.value
+  }
+}
+
 async function submit() {
   const ok = await git.commit(message.value)
   if (ok) message.value = ''
@@ -25,6 +43,17 @@ async function submit() {
     <button type="button" :disabled="!git.canCommit" @click="submit">
       提交已暂存变更
     </button>
-    <p class="muted">{{ commitHint }}</p>
+    <div class="template-chips">
+    <button
+      v-for="tpl in templates"
+      :key="tpl.prefix"
+      type="button"
+      class="template-chip"
+      :class="{ active: message.startsWith(tpl.prefix) }"
+      @click="insertTemplate(tpl.prefix)"
+      :title="tpl.desc"
+    >{{ tpl.label }}</button>
+  </div>
+  <p class="muted">{{ commitHint }}</p>
   </section>
 </template>
