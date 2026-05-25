@@ -383,7 +383,6 @@ function toggleAutoRefresh() {
           {{ autoRefresh ? '刷新中' : '自动刷新' }}
         </button>
         <button type="button" :disabled="git.loading" @click="git.refreshAll">刷新</button>
-        <button type="button" :disabled="git.loading" @click="git.refreshAll">刷新</button>
         <button type="button" :disabled="!git.canSync" @click="git.pull">拉取</button>
         <button type="button" :disabled="!git.canSync" @click="git.push">推送</button>
       </section>
