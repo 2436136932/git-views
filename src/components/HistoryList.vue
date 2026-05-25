@@ -1,8 +1,19 @@
 ﻿<script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useGitStore } from '../stores/gitStore'
 
 const git = useGitStore()
+const commitSearch = ref("")
+
+const filteredLog = computed(() => {
+  const q = commitSearch.value.toLowerCase().trim()
+  if (!q) return git.log
+  return git.log.filter(c =>
+    c.message.toLowerCase().includes(q) ||
+    (c.author_name || "").toLowerCase().includes(q) ||
+    c.hash.toLowerCase().includes(q)
+  )
+})
 
 const detailLines = computed(() => {
   if (!git.commitDetail?.diff) return []
@@ -19,15 +30,19 @@ const detailLines = computed(() => {
     <section class="history-panel">
       <div class="panel-title">
         <h3>提交历史</h3>
-        <span>最近 {{ git.log.length }} 条</span>
+        <span>最近 {{ filteredLog.length }} 条{{ commitSearch ? " / " + git.log.length + " 总计" : "" }}</span>
       </div>
 
+      <input v-model="commitSearch" type="text" class="search-input" placeholder="搜索提交信息、作者、哈希..." style="margin-bottom: 10px;" />
       <div class="history-empty" v-if="git.log.length === 0">
         当前仓库还没有提交记录。先暂存文件并创建第一次提交。
       </div>
+      <div class="history-empty" v-else-if="filteredLog.length === 0">
+        没有匹配的提交记录。
+      </div>
 
       <article
-        v-for="commit in git.log"
+        v-for="commit in filteredLog"
         v-else
         class="commit-row"
         :key="commit.hash"

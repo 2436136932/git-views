@@ -908,3 +908,81 @@ button:disabled {
 .search-input:focus {
   border-color: var(--accent, #d9775e);
 }
+
+.error-area {
+  padding: 0;
+}
+
+.error-summary {
+  cursor: pointer;
+  user-select: text;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.error-summary:hover {
+  opacity: 0.85;
+}
+
+.error-toggle {
+  font-size: 11px;
+  color: var(--accent, #d9775e);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  margin-left: 4px;
+}
+
+.error-detail {
+  margin-top: 6px;
+  padding: 10px;
+  background: var(--card-bg, #fffdf7);
+  border: 1px solid var(--card-border, #f0e8d8);
+  border-radius: var(--radius, 10px);
+  font-size: 12px;
+  color: var(--text, #4a4138);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.auto-refresh-btn {
+  background: var(--card-bg, #fffdf7);
+  border: 1px solid var(--card-border, #f0e8d8);
+  color: var(--text-muted, #8c8a82);
+  padding: 6px 12px;
+  border-radius: var(--radius, 10px);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.auto-refresh-btn:hover {
+  border-color: var(--accent, #d9775e);
+  color: var(--accent, #d9775e);
+}
+
+.auto-refresh-btn.active {
+  background: var(--accent, #d9775e);
+  border-color: var(--accent, #d9775e);
+  color: white;
+}
+
+.auto-refresh-btn.active::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: white;
+  margin-right: 4px;
+  animation: refreshPulse 1.5s infinite;
+}
+
+@keyframes refreshPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

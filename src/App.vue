@@ -20,6 +20,9 @@ const rebaseTarget = ref('')
 const branchSearch = ref('')
 const remoteBranchSearch = ref('')
 const deleteBranchSearch = ref('')
+const autoRefresh = ref(false)
+const autoRefreshTimer = ref(null)
+const showErrorDetail = ref(false)
 
 const mergeOptions = computed(() => git.mergeCandidates)
 const mergeActionDisabled = computed(() => git.loading || git.hasBlockingGitOperation)
@@ -104,6 +107,15 @@ const updateCleanups = []
 onMounted(() => {
   if (!updateApi) return
 
+  if (!av._refreshOnFocus) {
+    av._refreshOnFocus = () => {
+      if (git.hasRepo && !git.loading && autoRefresh.value) {
+        git.refreshAll()
+      }
+    }
+    window.addEventListener('focus', av._refreshOnFocus)
+  }
+
   updateCleanups.push(
     updateApi.onChecking(() => {
       updateError.value = ''
@@ -140,6 +152,11 @@ onBeforeUnmount(() => {
     const dispose = updateCleanups.pop()
     dispose?.()
   }
+  if (autoRefreshTimer.value) clearInterval(autoRefreshTimer.value)
+  if (av._refreshOnFocus) {
+    window.removeEventListener('focus', av._refreshOnFocus)
+    av._refreshOnFocus = null
+  }
 })
 
 function startUpdateDownload() {
@@ -148,6 +165,21 @@ function startUpdateDownload() {
 
 function installUpdate() {
   updateApi?.install()
+}
+
+function toggleAutoRefresh() {
+  autoRefresh.value = !autoRefresh.value
+  if (autoRefreshTimer.value) {
+    clearInterval(autoRefreshTimer.value)
+    autoRefreshTimer.value = null
+  }
+  if (autoRefresh.value) {
+    autoRefreshTimer.value = setInterval(() => {
+      if (git.hasRepo && !git.loading) {
+        git.refreshAll()
+      }
+    }, 15000)
+  }
 }
 </script>
 
@@ -341,6 +373,16 @@ function installUpdate() {
         <span class="sync-target" v-if="git.hasRemote && git.currentBranch">
           推送目标：{{ git.currentRemote }} / {{ git.currentBranch }}
         </span>
+        <button
+          type="button"
+          class="auto-refresh-btn"
+          :class="{ active: autoRefresh }"
+          @click="toggleAutoRefresh"
+          :title="autoRefresh ? '已开启自动刷新（每15秒刷新 + 窗口聚焦时）' : '点击开启自动刷新'"
+        >
+          {{ autoRefresh ? '刷新中' : '自动刷新' }}
+        </button>
+        <button type="button" :disabled="git.loading" @click="git.refreshAll">刷新</button>
         <button type="button" :disabled="git.loading" @click="git.refreshAll">刷新</button>
         <button type="button" :disabled="!git.canSync" @click="git.pull">拉取</button>
         <button type="button" :disabled="!git.canSync" @click="git.push">推送</button>
@@ -375,7 +417,13 @@ function installUpdate() {
         </div>
       </header>
 
-      <p class="error" v-if="git.error">{{ git.error }}</p>
+      <div class="error-area" v-if="git.error">
+        <p class="error-summary" @click="showErrorDetail = !showErrorDetail">
+          {{ git.error }}
+          <span class="error-toggle">{{ showErrorDetail ? '收起' : '查看详情' }}</span>
+        </p>
+        <pre class="error-detail" v-if="showErrorDetail">{{ git.error }}</pre>
+      </div>
       <p class="success" v-if="git.successMessage">{{ git.successMessage }}</p>
 
       <GitGuide v-if="activeTab === 'guide'" />

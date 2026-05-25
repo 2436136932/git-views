@@ -27,9 +27,9 @@ function timeAgo(ts) {
       <h2>Git 操作台</h2>
       <p>选择一个仓库开始工作</p>
       <div class="home-actions">
-        <button type="button" class="primary-action" @click="('open')">打开仓库</button>
-        <button type="button" class="secondary-action" @click="('init')">新建仓库</button>
-        <button type="button" class="ghost-action" @click="('guide')">使用引导</button>
+        <button type="button" class="primary-action" @click="$emit('open')">打开仓库</button>
+        <button type="button" class="secondary-action" @click="$emit('init')">新建仓库</button>
+        <button type="button" class="ghost-action" @click="$emit('guide')">使用引导</button>
       </div>
     </div>
 
@@ -40,7 +40,7 @@ function timeAgo(ts) {
           v-for="repo in recent.repos"
           :key="repo.path"
           class="recent-card"
-          @click="('open', repo.path)"
+          @click="$emit('open', repo.path)"
         >
           <div class="card-head">
             <strong class="card-name">{{ repo.name }}</strong>
