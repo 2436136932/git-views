@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+﻿import fs from 'node:fs'
 import path from 'node:path'
 import simpleGit from 'simple-git'
 
@@ -248,10 +248,9 @@ export function createGitService() {
         const repoRoot = path.resolve(repoPath)
         const fullPath = path.resolve(repoPath, filePath)
         if (!fullPath.startsWith(repoRoot + path.sep) && fullPath !== repoRoot) {
-          throw new Error('文件路径超出仓库范围')
+          throw new Error('文件路径超出仓库范围。')
         }
-        const content = fs.readFileSync(fullPath, 'utf-8')
-        return content
+        return fs.readFileSync(fullPath, 'utf-8')
       })
     }
   }

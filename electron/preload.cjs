@@ -1,5 +1,11 @@
 ﻿const { contextBridge, ipcRenderer } = require('electron')
 
+function subscribe(channel, callback, map = (value) => value) {
+  const listener = (_event, payload) => callback(map(payload))
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.off(channel, listener)
+}
+
 contextBridge.exposeInMainWorld('desktopApi', {
   selectRepo: () => ipcRenderer.invoke('repo:select'),
   openPath: (targetPath) => ipcRenderer.invoke('path:open', targetPath),
@@ -41,32 +47,16 @@ contextBridge.exposeInMainWorld('desktopApi', {
     hardResetToCommit: (repoPath, commitHash) => ipcRenderer.invoke('git:hardResetToCommit', repoPath, commitHash),
     readFile: (repoPath, filePath) => ipcRenderer.invoke('git:readFile', repoPath, filePath)
   },
-
-  // ── GitHub 仓库信息 ──
   github: {
     info: (remoteUrl) => ipcRenderer.invoke('github:info', remoteUrl)
   },
-
-  // ── 自动更新 ──
   update: {
-    onChecking: (callback) => {
-      ipcRenderer.on('update:checking', () => callback())
-    },
-    onAvailable: (callback) => {
-      ipcRenderer.on('update:available', (_event, info) => callback(info))
-    },
-    onNotAvailable: (callback) => {
-      ipcRenderer.on('update:not-available', () => callback())
-    },
-    onProgress: (callback) => {
-      ipcRenderer.on('update:progress', (_event, progress) => callback(progress))
-    },
-    onDownloaded: (callback) => {
-      ipcRenderer.on('update:downloaded', () => callback())
-    },
-    onError: (callback) => {
-      ipcRenderer.on('update:error', (_event, message) => callback(message))
-    },
+    onChecking: (callback) => subscribe('update:checking', callback, () => undefined),
+    onAvailable: (callback) => subscribe('update:available', callback),
+    onNotAvailable: (callback) => subscribe('update:not-available', callback, () => undefined),
+    onProgress: (callback) => subscribe('update:progress', callback),
+    onDownloaded: (callback) => subscribe('update:downloaded', callback, () => undefined),
+    onError: (callback) => subscribe('update:error', callback),
     startDownload: () => ipcRenderer.invoke('update:startDownload'),
     install: () => ipcRenderer.invoke('update:install'),
     checkNow: () => ipcRenderer.invoke('update:checkNow')

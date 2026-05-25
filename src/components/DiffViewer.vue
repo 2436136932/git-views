@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed } from 'vue'
 import { useGitStore } from '../stores/gitStore'
 

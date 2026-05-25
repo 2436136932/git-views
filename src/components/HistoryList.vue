@@ -22,9 +22,14 @@ const detailLines = computed(() => {
         <span>最近 {{ git.log.length }} 条</span>
       </div>
 
+      <div class="history-empty" v-if="git.log.length === 0">
+        当前仓库还没有提交记录。先暂存文件并创建第一次提交。
+      </div>
+
       <article
-        class="commit-row"
         v-for="commit in git.log"
+        v-else
+        class="commit-row"
         :key="commit.hash"
         :class="{ selected: git.selectedCommit?.hash === commit.hash }"
         @click="git.selectCommit(commit)"

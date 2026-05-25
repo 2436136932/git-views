@@ -1,11 +1,12 @@
 ﻿<script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useGitStore } from './stores/gitStore'
 import ChangeList from './components/ChangeList.vue'
 import CommitBox from './components/CommitBox.vue'
 import DiffViewer from './components/DiffViewer.vue'
 import HistoryList from './components/HistoryList.vue'
 import RemoteHistoryList from './components/RemoteHistoryList.vue'
+import GitBadge from './components/GitBadge.vue'
 import GitGuide from './components/GitGuide.vue'
 
 const git = useGitStore()
@@ -16,6 +17,8 @@ const rebaseTarget = ref('')
 
 const mergeOptions = computed(() => git.mergeCandidates)
 const mergeActionDisabled = computed(() => git.loading || git.hasBlockingGitOperation)
+
+
 
 watch(mergeOptions, (branches) => {
   if (!branches.includes(mergeTarget.value)) mergeTarget.value = ''
@@ -33,7 +36,17 @@ async function mergeBranch() {
   if (ok || !mergeOptions.value.includes(target)) mergeTarget.value = ''
 }
 
-// ── 配置远程仓库 ──
+async function rebaseBranch() {
+  const target = rebaseTarget.value
+  const ok = await git.rebaseBranch(target)
+  if (ok || !mergeOptions.value.includes(target)) rebaseTarget.value = ''
+}
+
+function showConflict(filePath) {
+  git.showConflictFile(filePath)
+  activeTab.value = 'changes'
+}
+
 const showRemoteForm = ref(false)
 const remoteName = ref('origin')
 const remoteUrl = ref('')
@@ -47,43 +60,53 @@ async function connectRemote() {
   }
 }
 
-async function rebaseBranch() {
-  const target = rebaseTarget.value
-  const ok = await git.rebaseBranch(target)
-  if (ok || !mergeOptions.value.includes(target)) rebaseTarget.value = ''
-}
-
-// ── 自动更新 ──
-const updatePhase = ref('idle') // idle | checking | available | downloading | downloaded | error
+const updatePhase = ref('idle')
 const updateVersion = ref('')
 const updateProgress = ref(0)
 const updateError = ref('')
-
 const updateApi = window.desktopApi?.update
+const updateCleanups = []
 
-if (updateApi) {
-  updateApi.onChecking(() => {
-    updatePhase.value = 'checking'
-  })
-  updateApi.onAvailable((info) => {
-    updateVersion.value = info.version
-    updatePhase.value = 'available'
-  })
-  updateApi.onNotAvailable(() => {
-    updatePhase.value = 'idle'
-  })
-  updateApi.onProgress((progress) => {
-    updatePhase.value = 'downloading'
-    updateProgress.value = progress.percent
-  })
-  updateApi.onDownloaded(() => {
-    updatePhase.value = 'downloaded'
-  })
-  updateApi.onError((message) => {
-    updateError.value = message
-    updatePhase.value = 'error'
-  })
-}
+onMounted(() => {
+  if (!updateApi) return
+
+  updateCleanups.push(
+    updateApi.onChecking(() => {
+      updateError.value = ''
+      updateProgress.value = 0
+      updatePhase.value = 'checking'
+    }),
+    updateApi.onAvailable((info) => {
+      updateVersion.value = info.version
+      updateProgress.value = 0
+      updateError.value = ''
+      updatePhase.value = 'available'
+    }),
+    updateApi.onNotAvailable(() => {
+      updateError.value = ''
+      updateProgress.value = 0
+      updatePhase.value = 'idle'
+    }),
+    updateApi.onProgress((progress) => {
+      updatePhase.value = 'downloading'
+      updateProgress.value = progress.percent
+    }),
+    updateApi.onDownloaded(() => {
+      updatePhase.value = 'downloaded'
+    }),
+    updateApi.onError((message) => {
+      updateError.value = message
+      updatePhase.value = 'error'
+    })
+  )
+})
+
+onBeforeUnmount(() => {
+  while (updateCleanups.length > 0) {
+    const dispose = updateCleanups.pop()
+    dispose?.()
+  }
+})
 
 function startUpdateDownload() {
   updateApi?.startDownload()
@@ -127,16 +150,16 @@ function installUpdate() {
 
         <template v-else-if="git.githubInfo">
           <div class="github-header">
-            <span class="github-icon">🐙</span>
+            <GitBadge :name="git.githubInfo?.fullName || 'github'" />
             <strong>{{ git.githubInfo.fullName }}</strong>
           </div>
           <p class="github-desc" v-if="git.githubInfo.description">{{ git.githubInfo.description }}</p>
           <div class="github-stats">
-            <span>★ {{ git.githubInfo.stars }}</span>
-            <span>🍴 {{ git.githubInfo.forks }}</span>
+            <span>Stars {{ git.githubInfo.stars }}</span>
+            <span>Forks {{ git.githubInfo.forks }}</span>
             <span v-if="git.githubInfo.language" class="github-lang">{{ git.githubInfo.language }}</span>
           </div>
-          <p class="github-issues" v-if="git.githubInfo.openIssues > 0">⚠ {{ git.githubInfo.openIssues }} 个未关闭 Issue</p>
+          <p class="github-issues" v-if="git.githubInfo.openIssues > 0">{{ git.githubInfo.openIssues }} 个未关闭 Issue</p>
         </template>
 
         <div class="github-empty" v-else>
@@ -181,7 +204,12 @@ function installUpdate() {
 
         <p class="progress-summary" v-if="git.gitStateDetail">{{ git.gitStateDetail }}</p>
         <p class="progress-next">下一步：{{ git.gitStateNextStep }}</p>
-        <p class="muted" v-if="git.gitState?.conflicts?.length > 0">冲突文件：{{ git.gitState.conflicts.join('、') }}</p>
+        <div v-if="git.gitState?.conflicts?.length > 0">
+          <p class="muted">冲突文件（点击查看差异）：</p>
+          <ul class="conflict-list">
+            <li v-for="file in git.gitState.conflicts" :key="file" class="clickable" @click="showConflict(file)">{{ file }}</li>
+          </ul>
+        </div>
         <p class="muted">进行中的 Git 操作会限制部分按钮，先处理完成再继续其他分支操作。</p>
 
         <div class="progress-actions">
@@ -272,6 +300,9 @@ function installUpdate() {
       </section>
 
       <section class="actions" v-if="git.hasRepo">
+        <span class="sync-target" v-if="git.hasRemote && git.currentBranch">
+          推送目标：{{ git.currentRemote }} / {{ git.currentBranch }}
+        </span>
         <button type="button" :disabled="git.loading" @click="git.refreshAll">刷新</button>
         <button type="button" :disabled="!git.canSync" @click="git.pull">拉取</button>
         <button type="button" :disabled="!git.canSync" @click="git.push">推送</button>
@@ -296,12 +327,12 @@ function installUpdate() {
       <header class="topbar">
         <div>
           <span class="eyebrow">Workspace</span>
-          <h2>{{ git.hasRepo ? '仓库工作区' : '请选择一个 Git 仓库' }}</h2>
+          <h2>{{ git.hasRepo ? '仓库工作区' : activeTab === 'guide' ? 'Git 知识库' : '请选择一个 Git 仓库' }}</h2>
         </div>
-        <div class="tabs" v-if="git.hasRepo">
-          <button :class="{ active: activeTab === 'changes' }" type="button" @click="activeTab = 'changes'">变更</button>
-          <button :class="{ active: activeTab === 'history' }" type="button" @click="activeTab = 'history'">提交历史</button>
-          <button :class="{ active: activeTab === 'remote' }" type="button" @click="activeTab = 'remote'; git.loadRemoteLog(git.selectedRemoteBranch || git.remoteBranches[0])">远程记录</button>
+        <div class="tabs">
+          <button v-if="git.hasRepo" :class="{ active: activeTab === 'changes' }" type="button" @click="activeTab = 'changes'">变更</button>
+          <button v-if="git.hasRepo" :class="{ active: activeTab === 'history' }" type="button" @click="activeTab = 'history'">提交历史</button>
+          <button v-if="git.hasRepo" :class="{ active: activeTab === 'remote' }" type="button" @click="activeTab = 'remote'; git.loadRemoteLog(git.selectedRemoteBranch || git.remoteBranches[0])">远程记录</button>
           <button :class="{ active: activeTab === 'guide' }" type="button" @click="activeTab = 'guide'">Git 知识库</button>
         </div>
       </header>
@@ -309,9 +340,12 @@ function installUpdate() {
       <p class="error" v-if="git.error">{{ git.error }}</p>
       <p class="success" v-if="git.successMessage">{{ git.successMessage }}</p>
 
-      <div class="empty-state" v-if="!git.hasRepo">
+      <GitGuide v-if="activeTab === 'guide'" />
+
+      <div class="empty-state" v-else-if="!git.hasRepo">
         <h3>先打开一个本地 Git 仓库</h3>
         <p>原型会读取仓库状态、分支信息、文件变更、diff、提交历史，并支持暂存、取消暂存、提交、拉取、推送和版本回退。</p>
+        <button type="button" class="secondary-action" @click="activeTab = 'guide'">先看首次使用引导</button>
       </div>
 
       <div class="content-grid" v-else-if="activeTab === 'changes'">
@@ -322,11 +356,9 @@ function installUpdate() {
         <DiffViewer />
       </div>
       <RemoteHistoryList v-else-if="activeTab === 'remote'" />
-      <GitGuide v-else-if="activeTab === 'guide'" />
       <HistoryList v-else />
     </section>
 
-    <!-- ── 自动更新横幅 ── -->
     <div class="update-banner" v-if="updatePhase !== 'idle'">
       <template v-if="updatePhase === 'checking'">
         <span class="update-spinner"></span>

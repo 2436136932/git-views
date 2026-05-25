@@ -1,6 +1,6 @@
 {
   "name": "git-views",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -9,9 +9,9 @@
     "dev": "vite",
     "electron": "electron .",
     "start": "concurrently \"npm run dev -- --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build": "vite build",
-    "build:win": "vite build && electron-builder --win",
-    "publish": "vite build && electron-builder --win --publish always",
+    "build": "vite build --configLoader runner",
+    "build:win": "vite build --configLoader runner && electron-builder --win",
+    "publish": "vite build --configLoader runner && electron-builder --win --publish always",
     "preview": "vite preview"
   },
   "build": {

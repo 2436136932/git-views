@@ -1,15 +1,74 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+﻿import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import https from 'node:https'
-import { createGitService } from './services/gitService.js'
 import pkg from 'electron-updater'
-const { autoUpdater } = pkg
+import { createGitService } from './services/gitService.js'
 
+const { autoUpdater } = pkg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = !app.isPackaged
 
 let mainWindow
+
+function parseGitHubRemote(remoteUrl) {
+  const match = remoteUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?$/)
+  if (!match) return null
+  return { owner: match[1], repo: match[2] }
+}
+
+function requestJson(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers }, (response) => {
+      let body = ''
+
+      response.on('data', (chunk) => {
+        body += chunk
+      })
+
+      response.on('end', () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            resolve(JSON.parse(body))
+          } catch {
+            reject(new Error('API 返回了无法解析的 JSON。'))
+          }
+          return
+        }
+
+        if (response.statusCode === 403) {
+          reject(new Error('GitHub API 返回 403，可能触发了频率限制。'))
+          return
+        }
+
+        reject(new Error(`GitHub API 返回 ${response.statusCode}`))
+      })
+    })
+
+    request.on('error', (error) => {
+      if (error.code === 'ENOTFOUND') {
+        reject(new Error('无法解析 api.github.com，请检查网络连接。'))
+        return
+      }
+
+      if (error.code === 'ECONNREFUSED') {
+        reject(new Error('连接 GitHub 被拒绝，请检查网络或代理设置。'))
+        return
+      }
+
+      const isSslError = error.code === 'CERT_HAS_EXPIRED' ||
+        error.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
+        error.message.includes('unable to verify the first certificate')
+
+      if (isSslError) {
+        reject(new Error('GitHub SSL 证书校验失败，请检查系统证书或网络代理。'))
+        return
+      }
+
+      reject(new Error(error.message))
+    })
+  })
+}
 
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false
@@ -48,17 +107,9 @@ function setupAutoUpdater() {
     mainWindow?.webContents.send('update:error', error.message)
   })
 
-  ipcMain.handle('update:startDownload', () => {
-    autoUpdater.downloadUpdate()
-  })
-
-  ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall(false, true)
-  })
-
-  ipcMain.handle('update:checkNow', () => {
-    autoUpdater.checkForUpdates()
-  })
+  ipcMain.handle('update:startDownload', () => autoUpdater.downloadUpdate())
+  ipcMain.handle('update:install', () => autoUpdater.quitAndInstall(false, true))
+  ipcMain.handle('update:checkNow', () => autoUpdater.checkForUpdates())
 }
 
 function createWindow() {
@@ -118,6 +169,9 @@ function registerIpcHandlers() {
 
   const git = createGitService()
   ipcMain.handle('git:isRepo', (_event, repoPath) => git.isRepo(repoPath))
+  ipcMain.handle('git:init', (_event, repoPath) => git.init(repoPath))
+  ipcMain.handle('git:addRemote', (_event, repoPath, name, url) => git.addRemote(repoPath, name, url))
+  ipcMain.handle('git:setRemoteUrl', (_event, repoPath, name, url) => git.setRemoteUrl(repoPath, name, url))
   ipcMain.handle('git:status', (_event, repoPath) => git.status(repoPath))
   ipcMain.handle('git:state', (_event, repoPath) => git.state(repoPath))
   ipcMain.handle('git:diff', (_event, repoPath, filePath, staged) => git.diff(repoPath, filePath, staged))
@@ -127,6 +181,7 @@ function registerIpcHandlers() {
   ipcMain.handle('git:unstageAll', (_event, repoPath) => git.unstageAll(repoPath))
   ipcMain.handle('git:commit', (_event, repoPath, message) => git.commit(repoPath, message))
   ipcMain.handle('git:pull', (_event, repoPath) => git.pull(repoPath))
+  ipcMain.handle('git:push', (_event, repoPath) => git.push(repoPath))
   ipcMain.handle('git:log', (_event, repoPath) => git.log(repoPath))
   ipcMain.handle('git:branches', (_event, repoPath) => git.branches(repoPath))
   ipcMain.handle('git:remoteBranches', (_event, repoPath) => git.remoteBranches(repoPath))
@@ -150,57 +205,15 @@ function registerIpcHandlers() {
   ipcMain.handle('git:hardResetToCommit', (_event, repoPath, commitHash) => git.hardResetToCommit(repoPath, commitHash))
   ipcMain.handle('git:readFile', (_event, repoPath, filePath) => git.readFileContent(repoPath, filePath))
 
-  // ── git init ──
-  ipcMain.handle('git:init', (_event, repoPath) => git.init(repoPath))
-  ipcMain.handle('git:addRemote', (_event, repoPath, name, url) => git.addRemote(repoPath, name, url))
-  ipcMain.handle('git:setRemoteUrl', (_event, repoPath, name, url) => git.setRemoteUrl(repoPath, name, url))
-
-  // ── GitHub 仓库信息 ──
   ipcMain.handle('github:info', async (_event, remoteUrl) => {
-    if (!remoteUrl) return { ok: false, message: '没有远程仓库 URL' }
+    if (!remoteUrl) return { ok: false, message: '没有远程仓库 URL。' }
 
-    // 解析 GitHub remote URL → owner/repo
-    // 支持格式:
-    //   https://github.com/owner/repo.git
-    //   https://github.com/owner/repo
-    //   git@github.com:owner/repo.git
-    let match = remoteUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?$/)
-    if (!match) return { ok: false, message: '不是 GitHub 远程仓库' }
-
-    const owner = match[1]
-    const repo = match[2]
+    const parsed = parseGitHubRemote(remoteUrl)
+    if (!parsed) return { ok: false, message: '当前远程仓库不是 GitHub 仓库。' }
 
     try {
-      const apiUrl = `https://api.github.com/repos/${owner}/${repo}`
-      const data = await new Promise((resolve, reject) => {
-        https.get(apiUrl, {
-          headers: { 'User-Agent': 'git-views/0.1.0' },
-          rejectUnauthorized: false
-        }, (res) => {
-          let body = ''
-          res.on('data', chunk => body += chunk)
-          res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              try { resolve(JSON.parse(body)) }
-              catch (e) { reject(new Error('API 返回格式异常')) }
-            } else {
-              const msg = res.statusCode === 403
-                ? 'GitHub API 返回 403（可能触发了频率限制）'
-                : `GitHub API 返回 ${res.statusCode}`
-              reject(new Error(msg))
-            }
-          })
-        }).on('error', (err) => {
-          const isSslError = err.code === 'CERT_HAS_EXPIRED' || err.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || err.message.includes('unable to verify the first certificate')
-          const msg = err.code === 'ENOTFOUND'
-            ? '无法解析域名 api.github.com（请检查网络）'
-            : err.code === 'ECONNREFUSED'
-            ? '连接被拒绝（请检查网络/代理）'
-            : isSslError
-            ? 'SSL 证书验证失败 — 可尝试设置环境变量 NODE_OPTIONS=--use-system-ca 后重启应用'
-            : err.message
-          reject(new Error(msg))
-        })
+      const data = await requestJson(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, {
+        'User-Agent': 'git-views/0.1.1'
       })
 
       return {

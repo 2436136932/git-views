@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { useGitStore } from '../stores/gitStore'
 
 const git = useGitStore()
@@ -28,7 +28,7 @@ function statusText(file) {
 
     <div class="change-group">
       <h4>已暂存</h4>
-      <p class="muted" v-if="git.stagedFiles.length === 0">暂无已暂存文件。</p>
+      <p class="muted" v-if="git.stagedFiles.length === 0">暂时没有已暂存文件。</p>
       <article
         v-for="file in git.stagedFiles"
         :key="`staged-${file.path}`"
@@ -44,7 +44,7 @@ function statusText(file) {
 
     <div class="change-group">
       <h4>未暂存</h4>
-      <p class="muted" v-if="git.unstagedFiles.length === 0">暂无未暂存文件。</p>
+      <p class="muted" v-if="git.unstagedFiles.length === 0">暂时没有未暂存文件。</p>
       <article
         v-for="file in git.unstagedFiles"
         :key="`unstaged-${file.path}`"

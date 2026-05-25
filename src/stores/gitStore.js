@@ -1,4 +1,4 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 
 function ensureDesktopApi() {
   if (!window.desktopApi) {
@@ -197,6 +197,8 @@ export const useGitStore = defineStore('git', {
       }
 
       if (result?.ok) {
+        this.successMessage = '远程仓库已连接'
+        this.clearSuccessAfter()
         await this.refreshAll()
       }
       return result?.ok
@@ -249,12 +251,16 @@ export const useGitStore = defineStore('git', {
     },
 
     async abortRebase() {
+      const confirmed = window.confirm("确定要中止 rebase 吗？当前变基进度会丢失，分支会恢复到变基前的状态。")
+      if (!confirmed) return false
       const result = await this.callGit('git rebase --abort', (api) => api.git.abortRebase(this.repoPath))
       if (result?.ok) await this.refreshAll()
       return result?.ok
     },
 
     async abortMerge() {
+      const confirmed = window.confirm("确定要中止 merge 吗？合并进度会丢失，分支会恢复到合并前的状态。")
+      if (!confirmed) return false
       const result = await this.callGit('git merge --abort', (api) => api.git.abortMerge(this.repoPath))
       if (result?.ok) await this.refreshAll()
       return result?.ok
@@ -267,6 +273,8 @@ export const useGitStore = defineStore('git', {
     },
 
     async abortCherryPick() {
+      const confirmed = window.confirm("确定要中止 cherry-pick 吗？当前 cherry-pick 进度会丢失。")
+      if (!confirmed) return false
       const result = await this.callGit('git cherry-pick --abort', (api) => api.git.abortCherryPick(this.repoPath))
       if (result?.ok) await this.refreshAll()
       return result?.ok
@@ -507,9 +515,9 @@ export const useGitStore = defineStore('git', {
         return false
       }
 
-      const confirmed = window.confirm(`确定要删除分支 ${normalized} 吗？`)
+      const confirmed = window.confirm(`确定要删除本地分支 ${normalized} 吗？此操作不可撤销。`)
       if (!confirmed) {
-        this.error = '已取消删除分支。'
+        this.error = '已取消删除分支。本地分支已保留。'
         this.addCommandLog(`git branch -d ${normalized}`, this.error, false)
         return false
       }
@@ -545,6 +553,11 @@ export const useGitStore = defineStore('git', {
         return false
       }
       const result = await this.callGit(`git push -u ${this.currentRemote} HEAD`, (api) => api.git.pushCurrentBranch(this.repoPath, this.currentRemote))
+      if (result?.ok) {
+        const summary = this.formatPushSummary(result.data)
+        this.successMessage = `推送${summary}`
+        this.clearSuccessAfter()
+      }
       await this.refreshAll()
       return result?.ok
     },
@@ -554,7 +567,7 @@ export const useGitStore = defineStore('git', {
       const branchName = branchParts.join('/')
       if (!remoteName || !branchName) return false
 
-      const confirmed = window.confirm(`确定要删除远程分支 ${remoteBranch} 吗？`)
+      const confirmed = window.confirm(`确定要删除远程分支 ${remoteBranch} 吗？此操作不可撤销且会影响其他协作者。`)
       if (!confirmed) return false
 
       const result = await this.callGit(`git push ${remoteName} --delete ${branchName}`, (api) => api.git.deleteRemoteBranch(this.repoPath, remoteName, branchName))
@@ -612,6 +625,12 @@ export const useGitStore = defineStore('git', {
       })
     },
 
+    async showConflictFile(filePath) {
+      this.selectedFile = { path: filePath, index: 'U', workingDir: 'U' }
+      this.selectedDiffStaged = false
+      await this.showDiff(this.selectedFile, false)
+    },
+
     async stage(file) {
       await this.callGit(`git add ${file.path}`, (api) => api.git.stage(this.repoPath, file.path))
       await this.afterMutation(file, true)
@@ -655,6 +674,11 @@ export const useGitStore = defineStore('git', {
       }
       const result = await this.callGit('git pull', (api) => api.git.pull(this.repoPath))
       const savedError = this.error
+      if (result?.ok) {
+        const summary = this.formatPullSummary(result.data)
+        this.successMessage = `拉取${summary}`
+        this.clearSuccessAfter()
+      }
       await this.refreshAll()
       if (savedError) this.error = savedError
       return result?.ok ?? false
@@ -667,6 +691,11 @@ export const useGitStore = defineStore('git', {
       }
       const result = await this.callGit('git push', (api) => api.git.pushCurrentBranch(this.repoPath, this.currentRemote))
       const savedError = this.error
+      if (result?.ok) {
+        const summary = formatPushSummary(result.data)
+        this.successMessage = `推送${summary}`
+        this.clearSuccessAfter()
+      }
       await this.refreshAll()
       if (savedError) this.error = savedError
       return result?.ok ?? false
@@ -729,6 +758,24 @@ export const useGitStore = defineStore('git', {
         this.diff = ''
       }
       await this.refreshStatus()
+    },
+
+    formatPullSummary(data) {
+      if (!data?.summary) return '完成'
+      const s = data.summary
+      if (s.changes === 0) return '完成：已是最新'
+      const parts = [`${s.changes} 个文件变更`]
+      if (s.insertions > 0) parts.push(`+${s.insertions}`)
+      if (s.deletions > 0) parts.push(`-${s.deletions}`)
+      return '成功：' + parts.join('，')
+    },
+
+    formatPushSummary(data) {
+      if (!data?.pushed || data.pushed.length === 0) return '完成：已是最新'
+      const pushed = data.pushed.filter(p => !p.alreadyUpdated)
+      if (pushed.length === 0) return '完成：已是最新'
+      const refs = pushed.map(p => p.branch || p.local).filter(Boolean)
+      return `成功：已推送 ${refs.join(', ')} 到 ${this.currentRemote}`
     },
 
     async callGit(label, operation) {
